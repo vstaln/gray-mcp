@@ -95,7 +95,8 @@ impl McpClient {
         }
     }
 
-    pub async fn close(self) {
-        let _ = self.service.cancel().await;
+    /// Ask the service task to stop; the child process (if any) exits with it.
+    pub fn close(&self) {
+        self.service.cancellation_token().cancel();
     }
 }

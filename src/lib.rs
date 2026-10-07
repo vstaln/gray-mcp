@@ -12,6 +12,7 @@ pub mod client;
 pub mod config;
 pub mod consent;
 pub mod convert;
+pub mod hub;
 pub mod names;
 pub mod sidecar;
 
