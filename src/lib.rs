@@ -10,6 +10,8 @@ use std::path::PathBuf;
 pub mod cli;
 pub mod config;
 pub mod consent;
+pub mod convert;
+pub mod names;
 pub mod sidecar;
 
 /// Manifest name: the host forwards `gray mcp ...` to this binary.
