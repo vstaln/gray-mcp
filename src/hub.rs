@@ -46,6 +46,8 @@ pub type ConnectFn =
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum State {
     Connecting,
+    /// Project server awaiting the operator's consent.
+    Pending,
     Ready { tools: usize },
     Failed { error: String },
     Denied,
@@ -64,6 +66,9 @@ pub struct Hub {
     table: RwLock<BTreeMap<String, (String, String)>>,
     defs: RwLock<Vec<Value>>,
     changed_tx: watch::Sender<u64>,
+    /// Sender handed to connections so they can report `tools/list_changed`;
+    /// set by `start`, used by `start_server`.
+    notify_tx: RwLock<Option<UnboundedSender<String>>>,
     connect: ConnectFn,
     backoff_base: Duration,
     /// Bumped on every `reload`; connect tasks from an older generation
@@ -104,6 +109,7 @@ impl Hub {
             table: RwLock::new(BTreeMap::new()),
             defs: RwLock::new(Vec::new()),
             changed_tx,
+            notify_tx: RwLock::new(None),
             connect,
             backoff_base,
             generation: RwLock::new(0),
@@ -122,6 +128,11 @@ impl Hub {
         self.set_state(name, State::Disabled);
     }
 
+    /// Hold a server back until consent arrives (`start` skips it).
+    pub fn mark_pending(&self, name: &str) {
+        self.set_state(name, State::Pending);
+    }
+
     fn set_state(&self, name: &str, state: State) {
         self.states.write().unwrap().insert(name.to_string(), state);
     }
@@ -138,6 +149,7 @@ impl Hub {
     /// listener that re-lists a server when it announces a tool change.
     pub async fn start(self: &Arc<Self>) {
         let (tx, mut rx) = mpsc::unbounded_channel::<String>();
+        *self.notify_tx.write().unwrap() = Some(tx.clone());
         let generation = self.current_gen();
         let pending: Vec<ServerEntry> = self
             .servers
@@ -162,6 +174,26 @@ impl Hub {
                 hub.rebuild().await;
             }
         });
+    }
+
+    /// Connect one server now (after consent or `/mcp allow`); a no-op for
+    /// names that are not configured. Calls `start` first if it never ran.
+    pub async fn start_server(self: &Arc<Self>, name: &str) {
+        let entry = self.servers.read().unwrap().iter().find(|s| s.name == name).cloned();
+        let Some(entry) = entry else { return };
+        let tx = self.notify_tx.read().unwrap().clone();
+        let tx = match tx {
+            Some(tx) => tx,
+            None => {
+                self.set_state(name, State::Pending);
+                self.start().await;
+                self.notify_tx.read().unwrap().clone().expect("start sets notify_tx")
+            }
+        };
+        self.set_state(name, State::Connecting);
+        let hub = Arc::clone(self);
+        let generation = self.current_gen();
+        tokio::spawn(async move { hub.connect_loop(entry, tx, generation).await });
     }
 
     async fn connect_loop(self: Arc<Self>, entry: ServerEntry, tx: UnboundedSender<String>, generation: u64) {
@@ -272,6 +304,7 @@ impl Hub {
     /// Close everything, swap in `servers`, and start again.
     pub async fn reload(self: &Arc<Self>, servers: Vec<ServerEntry>) {
         *self.generation.write().unwrap() += 1;
+        *self.notify_tx.write().unwrap() = None;
         let old: Vec<Arc<dyn Conn>> = self.conns.write().unwrap().drain().map(|(_, c)| c).collect();
         for c in old {
             c.close().await;

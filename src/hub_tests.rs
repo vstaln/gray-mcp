@@ -151,6 +151,20 @@ async fn failed_connect_sets_failed_state() {
 }
 
 #[tokio::test]
+async fn pending_server_starts_on_demand() {
+    let (hub, _, _) = setup(&[("a", &["x"]), ("p", &["y"])]);
+    hub.mark_pending("p");
+    hub.start().await;
+    ready(&hub, 1).await;
+    assert_eq!(hub.status()[1].1, State::Pending);
+    hub.start_server("p").await;
+    ready(&hub, 2).await;
+    assert_eq!(hub.status()[1].1, State::Ready { tools: 1 });
+    hub.start_server("nope").await;
+    assert_eq!(hub.status().len(), 2);
+}
+
+#[tokio::test]
 async fn reload_replaces_servers() {
     let (hub, _, _) = setup(&[("a", &["x"])]);
     hub.start().await;
