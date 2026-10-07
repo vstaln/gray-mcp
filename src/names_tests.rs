@@ -40,8 +40,5 @@ fn fix_schema_forces_object_and_properties() {
     assert_eq!(fix_schema(Some(json!([1]))), json!({"type": "object", "properties": {}}));
     let ok = json!({"type": "object", "properties": {"a": {}}, "required": ["a"]});
     assert_eq!(fix_schema(Some(ok.clone())), ok);
-    assert_eq!(
-        fix_schema(Some(json!({"type": "object"}))),
-        json!({"type": "object", "properties": {}})
-    );
+    assert_eq!(fix_schema(Some(json!({"type": "object"}))), json!({"type": "object", "properties": {}}));
 }

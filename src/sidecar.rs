@@ -229,8 +229,7 @@ async fn allow(name: &str, hub: &Arc<Hub>, cwd: &Path) -> anyhow::Result<()> {
 fn spawn_consent(pending: Vec<String>, hub: Arc<Hub>, io: Arc<Io>, cwd: PathBuf) {
     tokio::spawn(async move {
         let cfg = config::load(&cwd);
-        let entries: Vec<config::ServerEntry> =
-            cfg.servers.into_iter().filter(|s| pending.contains(&s.name)).collect();
+        let entries: Vec<config::ServerEntry> = cfg.servers.into_iter().filter(|s| pending.contains(&s.name)).collect();
         let mut store = match ConsentStore::default_path() {
             Ok(p) => Some(ConsentStore::load(p)),
             Err(e) => {

@@ -4,9 +4,7 @@ use std::process::Stdio;
 use std::time::Duration;
 
 use anyhow::{Context, anyhow};
-use rmcp::model::{
-    CallToolRequestParams, CallToolResult, ClientCapabilities, ClientConfig, Implementation, Tool,
-};
+use rmcp::model::{CallToolRequestParams, CallToolResult, ClientCapabilities, ClientConfig, Implementation, Tool};
 use rmcp::service::{NotificationContext, RoleClient, RunningService};
 use rmcp::transport::{
     StreamableHttpClientTransport, TokioChildProcess, streamable_http_client::StreamableHttpClientTransportConfig,
@@ -29,10 +27,7 @@ impl ClientHandler for Handler {
     }
 
     fn get_info(&self) -> ClientConfig {
-        ClientConfig::new(
-            ClientCapabilities::default(),
-            Implementation::new("gray-mcp", env!("CARGO_PKG_VERSION")),
-        )
+        ClientConfig::new(ClientCapabilities::default(), Implementation::new("gray-mcp", env!("CARGO_PKG_VERSION")))
     }
 }
 

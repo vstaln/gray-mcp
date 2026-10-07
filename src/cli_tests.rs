@@ -74,7 +74,8 @@ fn clap_parses_add_with_double_dash() {
     let e = build_entry(None, command, env, vec![], Some(30)).unwrap();
     assert_eq!(e, json!({"command": "npx", "args": ["-y", "srv"], "env": {"A": "1"}, "timeout": 30}));
 
-    let cli = Cli::try_parse_from(["gray-mcp", "add", "web", "--project", "--url", "http://h/mcp", "--header", "X=y"]).unwrap();
+    let cli = Cli::try_parse_from(["gray-mcp", "add", "web", "--project", "--url", "http://h/mcp", "--header", "X=y"])
+        .unwrap();
     let Cmd::Add { project, url, header, command, .. } = cli.cmd else { panic!("not add") };
     assert!(project);
     let e = build_entry(url, command, vec![], header, None).unwrap();

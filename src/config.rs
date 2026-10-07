@@ -29,15 +29,8 @@ pub enum Source {
 /// How to reach the server.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Transport {
-    Stdio {
-        command: String,
-        args: Vec<String>,
-        env: BTreeMap<String, String>,
-    },
-    Http {
-        url: String,
-        headers: BTreeMap<String, String>,
-    },
+    Stdio { command: String, args: Vec<String>, env: BTreeMap<String, String> },
+    Http { url: String, headers: BTreeMap<String, String> },
 }
 
 impl Transport {
@@ -112,11 +105,9 @@ pub fn load(cwd: &Path) -> Config {
     let proj_file = project_path(cwd);
     let proj_dir = cwd.canonicalize().unwrap_or_else(|_| cwd.to_path_buf());
     let project = read(&proj_file, &mut warnings).map(|s| (s, proj_dir));
-    let mut cfg = load_from(
-        user.as_deref(),
-        project.as_ref().map(|(s, d)| (s.as_str(), d.as_path())),
-        &|k| std::env::var(k).ok(),
-    );
+    let mut cfg = load_from(user.as_deref(), project.as_ref().map(|(s, d)| (s.as_str(), d.as_path())), &|k| {
+        std::env::var(k).ok()
+    });
     warnings.append(&mut cfg.warnings);
     cfg.warnings = warnings;
     cfg
@@ -124,11 +115,7 @@ pub fn load(cwd: &Path) -> Config {
 
 /// `load` without the filesystem: `user` is the user file text, `project`
 /// the project file text plus its canonical directory.
-pub fn load_from(
-    user: Option<&str>,
-    project: Option<(&str, &Path)>,
-    env: &dyn Fn(&str) -> Option<String>,
-) -> Config {
+pub fn load_from(user: Option<&str>, project: Option<(&str, &Path)>, env: &dyn Fn(&str) -> Option<String>) -> Config {
     let mut servers: Vec<ServerEntry> = Vec::new();
     let mut warnings = Vec::new();
     if let Some(text) = user {
@@ -149,11 +136,7 @@ pub fn load_from(
 
 /// Parse one file's text. Invalid entries are skipped with a warning that
 /// names them; invalid JSON yields no entries and one warning.
-pub fn parse(
-    text: &str,
-    source: Source,
-    env: &dyn Fn(&str) -> Option<String>,
-) -> (Vec<ServerEntry>, Vec<String>) {
+pub fn parse(text: &str, source: Source, env: &dyn Fn(&str) -> Option<String>) -> (Vec<ServerEntry>, Vec<String>) {
     let label = match &source {
         Source::User => "mcp.json".to_string(),
         Source::Project(d) => d.join(".mcp.json").display().to_string(),
@@ -225,16 +208,9 @@ fn parse_entry(
                     .collect::<Result<Vec<_>, _>>()?,
                 Some(_) => return Err("\"args\" must be an array".into()),
             };
-            Transport::Stdio {
-                command: ex(command)?,
-                args,
-                env: ex_map(str_map("env")?)?,
-            }
+            Transport::Stdio { command: ex(command)?, args, env: ex_map(str_map("env")?)? }
         }
-        (None, Some(url)) => Transport::Http {
-            url: ex(url)?,
-            headers: ex_map(str_map("headers")?)?,
-        },
+        (None, Some(url)) => Transport::Http { url: ex(url)?, headers: ex_map(str_map("headers")?)? },
     };
     let timeout = match obj.get("timeout") {
         None | Some(Value::Null) => DEFAULT_TIMEOUT_SECS,
@@ -278,9 +254,8 @@ pub fn expand(s: &str, env: &dyn Fn(&str) -> Option<String>) -> Result<String, S
             .take_while(|(j, c)| c.is_ascii_alphanumeric() || *c == '_' || (*j == 0 && c.is_ascii_alphabetic()))
             .count();
         let name = &after[..name_len];
-        let valid = !name.is_empty()
-            && !name.starts_with(|c: char| c.is_ascii_digit())
-            && after[name_len..].starts_with('}');
+        let valid =
+            !name.is_empty() && !name.starts_with(|c: char| c.is_ascii_digit()) && after[name_len..].starts_with('}');
         if !valid {
             out.push_str("${");
             rest = after;

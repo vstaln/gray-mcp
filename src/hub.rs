@@ -40,16 +40,23 @@ impl Conn for McpClient {
 }
 
 pub type BoxFuture<'a, T> = Pin<Box<dyn Future<Output = T> + Send + 'a>>;
-pub type ConnectFn =
-    Arc<dyn for<'a> Fn(&'a ServerEntry, UnboundedSender<String>) -> BoxFuture<'a, anyhow::Result<Arc<dyn Conn>>> + Send + Sync>;
+pub type ConnectFn = Arc<
+    dyn for<'a> Fn(&'a ServerEntry, UnboundedSender<String>) -> BoxFuture<'a, anyhow::Result<Arc<dyn Conn>>>
+        + Send
+        + Sync,
+>;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum State {
     Connecting,
     /// Project server awaiting the operator's consent.
     Pending,
-    Ready { tools: usize },
-    Failed { error: String },
+    Ready {
+        tools: usize,
+    },
+    Failed {
+        error: String,
+    },
     Denied,
     Disabled,
 }
@@ -256,7 +263,12 @@ impl Hub {
         *self.table.write().unwrap() = table;
         let changed = {
             let mut cur = self.defs.write().unwrap();
-            if *cur == defs { false } else { *cur = defs; true }
+            if *cur == defs {
+                false
+            } else {
+                *cur = defs;
+                true
+            }
         };
         if changed {
             self.changed_tx.send_modify(|v| *v += 1);

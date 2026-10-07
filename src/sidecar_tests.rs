@@ -23,11 +23,7 @@ impl Write for Sink {
 impl Sink {
     fn frames(&self) -> Vec<Value> {
         let bytes = self.0.lock().unwrap().clone();
-        String::from_utf8(bytes)
-            .unwrap()
-            .lines()
-            .map(|l| serde_json::from_str(l).unwrap())
-            .collect()
+        String::from_utf8(bytes).unwrap().lines().map(|l| serde_json::from_str(l).unwrap()).collect()
     }
 }
 
@@ -81,7 +77,16 @@ async fn handle_manifest_and_unknown_method() {
     assert_eq!(frames.len(), 1);
     assert_eq!(frames[0]["id"], 2);
     assert_eq!(frames[0]["error"]["code"], -32601);
-    assert!(handle(&json!({"method": "plugin/shutdown", "params": {"reason": "session_end"}}), &hub, &io, Path::new("/tmp")).await.is_none());
+    assert!(
+        handle(
+            &json!({"method": "plugin/shutdown", "params": {"reason": "session_end"}}),
+            &hub,
+            &io,
+            Path::new("/tmp")
+        )
+        .await
+        .is_none()
+    );
 }
 
 #[tokio::test]
@@ -92,6 +97,7 @@ async fn tool_call_unknown_tool_is_error() {
     let res = handle(&req, &hub, &io, Path::new("/tmp")).await.unwrap();
     assert_eq!(res["is_error"], true);
     assert!(res["content"].as_str().unwrap().contains("mcp__x__y"));
-    let tools = handle(&json!({"id": 4, "method": "plugin/tools", "params": {}}), &hub, &io, Path::new("/tmp")).await.unwrap();
+    let tools =
+        handle(&json!({"id": 4, "method": "plugin/tools", "params": {}}), &hub, &io, Path::new("/tmp")).await.unwrap();
     assert_eq!(tools["tools"], json!([]));
 }
