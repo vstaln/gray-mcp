@@ -1,0 +1,32 @@
+[package]
+name = "gray-mcp"
+license = "MIT"
+description = "MCP for the gray agent harness: client (servers from mcp.json → gray tools, wire v1.3) and server (`gray mcp serve`)."
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+anyhow = "1.0.104"
+base64 = "0.22"
+clap = { version = "4.6.7", features = ["derive"] }
+log = "0.4"
+rmcp = { version = "=3.5.0", features = ["client", "server", "macros", "transport-child-process", "transport-io", "transport-streamable-http-client", "transport-streamable-http-client-reqwest"] }
+schemars = "1.2"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1.0.151"
+sha2 = "0.10"
+tokio = { version = "1", features = ["rt-multi-thread", "macros", "process", "io-std", "io-util", "sync", "time", "fs"] }
+
+[dev-dependencies]
+tempfile = "3.27.0"
+
+[lib]
+name = "gray_mcp"
+path = "src/lib.rs"
+
+[[bin]]
+name = "gray-mcp"
+path = "src/main.rs"
+
+[profile.release]
+strip = true
