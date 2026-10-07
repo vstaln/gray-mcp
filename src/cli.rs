@@ -102,7 +102,7 @@ pub async fn run(args: Vec<String>) -> anyhow::Result<()> {
             println!("allowed '{name}'");
         }
         Cmd::Tools => println!("{}", tools(&cwd).await),
-        Cmd::Serve => anyhow::bail!("gray mcp serve: not implemented yet"),
+        Cmd::Serve => crate::server::serve_stdio().await?,
     }
     Ok(())
 }
@@ -196,10 +196,7 @@ pub fn edit_add(doc: Value, name: &str, entry: Value) -> Value {
 
 /// Remove `mcpServers.<name>`; `Err` when it is not there.
 pub fn edit_remove(mut doc: Value, name: &str) -> anyhow::Result<Value> {
-    let removed = doc
-        .get_mut("mcpServers")
-        .and_then(Value::as_object_mut)
-        .and_then(|m| m.remove(name));
+    let removed = doc.get_mut("mcpServers").and_then(Value::as_object_mut).and_then(|m| m.remove(name));
     if removed.is_none() {
         anyhow::bail!("no server named '{name}'");
     }
@@ -210,7 +207,11 @@ fn consent_state(e: &config::ServerEntry, consent: &ConsentStore) -> &'static st
     match &e.source {
         Source::User => "allowed",
         Source::Project(dir) => {
-            if consent.is_allowed(&ConsentStore::key(dir, &e.name, &e.raw)) { "allowed" } else { "needs consent" }
+            if consent.is_allowed(&ConsentStore::key(dir, &e.name, &e.raw)) {
+                "allowed"
+            } else {
+                "needs consent"
+            }
         }
     }
 }
@@ -265,7 +266,16 @@ pub fn render_list(cfg: &Config, consent: &ConsentStore, cwd: &Path) -> String {
             }
         }
         for r in rows {
-            lines.push(format!("{:<w0$}  {:<w1$}  {:<w2$}  {}", r[0], r[1], r[2], r[3], w0 = w[0], w1 = w[1], w2 = w[2]));
+            lines.push(format!(
+                "{:<w0$}  {:<w1$}  {:<w2$}  {}",
+                r[0],
+                r[1],
+                r[2],
+                r[3],
+                w0 = w[0],
+                w1 = w[1],
+                w2 = w[2]
+            ));
         }
     }
     for warn in &cfg.warnings {
