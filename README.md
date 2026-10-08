@@ -1,4 +1,14 @@
-# gray-mcp
+<p align="center">
+  <img src="assets/gray-logo.svg" alt="gray" width="96">
+  <img src="assets/modelcontextprotocol.svg" alt="modelcontextprotocol" width="96">
+</p>
+<h1 align="center">gray-mcp</h1>
+<p align="center">Model Context Protocol for gray — one binary, client and server.</p>
+<p align="center">
+  <a href="https://github.com/vstaln/gray-mcp/blob/main/LICENSE"><img alt="MIT License" src="https://img.shields.io/badge/license-MIT-blue.svg"></a>
+  <img alt="gray plugin" src="https://img.shields.io/badge/gray-plugin-7aa2f7.svg">
+  <img alt="rust" src="https://img.shields.io/badge/built%20with-rust-orange.svg">
+</p>
 
 [Model Context Protocol](https://modelcontextprotocol.io) for
 [gray](https://github.com/vstaln/gray), as a sidecar plugin (wire v1.3).
@@ -42,7 +52,7 @@ servers are denied without asking.
 
 `~/.gray/mcp.json` is the user file; `<cwd>/.mcp.json` is the project
 file (all `~/.gray` paths follow `$GRAY_HOME`). Same shape as Claude
-Code / pi-mcp:
+Code's `mcp.json`:
 
 ```json
 {
@@ -168,3 +178,8 @@ Non-goals for v1:
 ## License
 
 MIT.
+
+---
+
+Part of the [gray](https://github.com/vstaln/gray) plugin ecosystem —
+the open-source AI agent harness. <https://gray.alignment.id>

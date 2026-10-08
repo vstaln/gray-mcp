@@ -1,7 +1,7 @@
 //! `mcp.json` loading: the user file (`~/.gray/mcp.json`) merged with the
 //! project file (`<cwd>/.mcp.json`), project winning on a name clash.
 //!
-//! Shape (Claude Code / pi-mcp compatible):
+//! Shape (Claude Code compatible):
 //! `{"mcpServers": {"<name>": {"command", "args", "env", "url", "headers",
 //! "timeout", "disabled"}}}`. Exactly one of `command` / `url`. `${VAR}` is
 //! expanded in `command`, `args`, `env` values, `url` and `headers` values;
