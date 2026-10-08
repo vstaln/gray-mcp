@@ -87,6 +87,7 @@ from the command line or inside a session.
 /mcp reload           # re-read both config files
 /mcp allow <name>     # consent + start a project server
 /mcp tools            # the flattened tool table
+/mcp doctor [--deep] [name]  # pre-flight checks (below)
 ```
 
 ## `gray mcp` on the command line
@@ -100,8 +101,22 @@ gray mcp add … --env K=V --timeout 60   # stdio env vars, per-call timeout
 gray mcp remove <name> [--project]
 gray mcp allow <name>                   # consent for a project server
 gray mcp tools                          # connect to allowed servers, list tools
+gray mcp doctor [--deep] [name]         # static config checks; --deep launches
+                                        #   each stdio server and lists tools
 gray mcp serve                          # stdio MCP server (below)
 ```
+
+## Doctor
+
+`gray mcp doctor` (also `/mcp doctor` in a session, and the `mcp_doctor`
+tool — `{name?, deep?}` — published alongside the MCP tools) static-checks
+every configured server *before* connecting: stdio command on PATH, URL
+parses as http(s), `~`/absolute arg paths exist, and no hardcoded secrets
+in `env`/`headers` (`${VAR}` indirection is the right shape). One
+`ok | warn | fail` row per server. `--deep` then launches each stdio server
+and lists its tools (8s each, sequential), flagging suspiciously-named
+tools (`exec`, `shell`, `eval`, `rm`, `delete`, `write_remote`).
+Report only — it never edits the config.
 
 ## Tool naming
 

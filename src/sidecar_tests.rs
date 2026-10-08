@@ -99,5 +99,6 @@ async fn tool_call_unknown_tool_is_error() {
     assert!(res["content"].as_str().unwrap().contains("mcp__x__y"));
     let tools =
         handle(&json!({"id": 4, "method": "plugin/tools", "params": {}}), &hub, &io, Path::new("/tmp")).await.unwrap();
-    assert_eq!(tools["tools"], json!([]));
+    // No servers connected → only the built-in mcp_doctor tool.
+    assert_eq!(tools["tools"], json!([crate::doctor::tool_def()]));
 }

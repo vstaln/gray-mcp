@@ -59,6 +59,14 @@ pub enum Cmd {
     Allow { name: String },
     /// Connect to every allowed server and list the tools it offers.
     Tools,
+    /// Static-check configured servers before connecting (report only).
+    Doctor {
+        /// Only check this server.
+        name: Option<String>,
+        /// Also launch each stdio server and list its tools (8s each).
+        #[arg(long)]
+        deep: bool,
+    },
     /// Serve gray itself as an MCP server on stdio.
     Serve,
 }
@@ -102,6 +110,9 @@ pub async fn run(args: Vec<String>) -> anyhow::Result<()> {
             println!("allowed '{name}'");
         }
         Cmd::Tools => println!("{}", tools(&cwd).await),
+        Cmd::Doctor { name, deep } => {
+            println!("{}", crate::doctor::report(&cwd, deep, name.as_deref()).await)
+        }
         Cmd::Serve => crate::server::serve_stdio().await?,
     }
     Ok(())

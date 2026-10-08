@@ -12,6 +12,7 @@ pub mod client;
 pub mod config;
 pub mod consent;
 pub mod convert;
+pub mod doctor;
 pub mod hub;
 pub mod names;
 pub mod server;
@@ -24,7 +25,7 @@ pub const PROTOCOL: &str = "1.3";
 /// Slash commands claimed in the TUI.
 pub const COMMANDS: &[&str] = &["/mcp"];
 /// Subcommands offered for shell/TUI completion.
-pub const COMPLETION: &[&str] = &["list", "add", "remove", "allow", "tools", "serve"];
+pub const COMPLETION: &[&str] = &["list", "add", "remove", "allow", "tools", "doctor", "serve"];
 
 /// The `plugin/manifest` reply. Tools are deliberately empty: the live set
 /// arrives through `plugin/tools`.

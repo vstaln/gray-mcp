@@ -103,11 +103,26 @@ pub async fn handle(req: &Value, hub: &Arc<Hub>, io: &Io, cwd: &Path) -> Option<
     let params = req.get("params").cloned().unwrap_or(Value::Null);
     match method {
         "plugin/manifest" => Some(crate::manifest()),
-        "plugin/tools" => Some(json!({"tools": hub.tools()})),
+        "plugin/tools" => {
+            let mut tools = hub.tools();
+            tools.push(crate::doctor::tool_def());
+            Some(json!({"tools": tools}))
+        }
         "tool/call" => {
             let name = params.get("name").and_then(Value::as_str).unwrap_or("");
             let args = params.get("args").cloned().unwrap_or_else(|| json!({}));
-            Some(hub.call(name, args).await)
+            if name == "mcp_doctor" {
+                let cwd = params
+                    .get("session")
+                    .and_then(|s| s.get("cwd"))
+                    .and_then(Value::as_str)
+                    .filter(|c| !c.is_empty())
+                    .map(PathBuf::from)
+                    .unwrap_or_else(|| cwd.to_path_buf());
+                Some(crate::doctor::call(&args, &cwd).await)
+            } else {
+                Some(hub.call(name, args).await)
+            }
         }
         "command/run" => {
             let argv: Vec<String> = params
@@ -194,7 +209,14 @@ pub async fn command(argv: &[String], hub: &Arc<Hub>, cwd: &Path) -> String {
                 .collect::<Vec<_>>()
                 .join("\n")
         }
-        Some(other) => format!("unknown subcommand {other}; use /mcp [list|reload|allow <name>|tools]"),
+        Some("doctor") => {
+            let deep = argv.iter().any(|a| a == "--deep");
+            let name = argv.iter().skip(1).find(|a| !a.starts_with('-'));
+            crate::doctor::report(cwd, deep, name.map(String::as_str)).await
+        }
+        Some(other) => {
+            format!("unknown subcommand {other}; use /mcp [list|reload|allow <name>|tools|doctor [--deep] [name]]")
+        }
     }
 }
 
