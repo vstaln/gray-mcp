@@ -23,7 +23,9 @@ use crate::consent::{self, ConsentStore};
 use crate::hub::{Hub, State};
 
 /// How long the first `plugin/tools` waits for servers to come up.
-pub const FIRST_TOOLS_WAIT: Duration = Duration::from_secs(3);
+/// Node-based servers cold-start in seconds; 10s covers them while still
+/// bounding a hung server (the answer then goes out with whatever is up).
+pub const FIRST_TOOLS_WAIT: Duration = Duration::from_secs(10);
 
 /// Frame writer plus the table of our own outstanding `host/*` requests.
 pub struct Io {

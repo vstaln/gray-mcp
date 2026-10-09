@@ -65,13 +65,16 @@ Code's `mcp.json`:
 }
 ```
 
-- Each entry is either **stdio** (`command`, optional `args`, `env`) or
-  **streamable HTTP** (`url`, optional `headers`) — exactly one of
-  `command` / `url`.
+- Each entry is either **stdio** (`command`, optional `args`, `env`,
+  `env_file`) or **streamable HTTP** (`url`, optional `headers`) — exactly
+  one of `command` / `url`.
+- `env_file` (stdio only): path to a `KEY=VAL` dotenv-style file merged
+  into the spawned process environment — secrets live in the file, not in
+  this JSON. `env` keys win on conflicts; `~` expands to `$HOME`.
 - `timeout`: seconds per call, default 120, clamped to 1–300.
 - `disabled`: keep the entry, never connect.
 - `${VAR}` expands from the environment in `command`, `args`, `env`
-  values, `url` and `headers` values. An unset variable invalidates that
+  values, `env_file`, `url` and `headers` values. An unset variable invalidates that
   entry: it is skipped with a warning, nothing else breaks.
 - Both files merge; project wins on a name clash. Invalid entries are
   skipped with a warning, never fatal.
@@ -124,7 +127,7 @@ every configured server *before* connecting: stdio command on PATH, URL
 parses as http(s), `~`/absolute arg paths exist, and no hardcoded secrets
 in `env`/`headers` (`${VAR}` indirection is the right shape). One
 `ok | warn | fail` row per server. `--deep` then launches each stdio server
-and lists its tools (8s each, sequential), flagging suspiciously-named
+and lists its tools (30s each, sequential), flagging suspiciously-named
 tools (`exec`, `shell`, `eval`, `rm`, `delete`, `write_remote`).
 Report only — it never edits the config.
 

@@ -10,7 +10,12 @@ fn entry(name: &str) -> ServerEntry {
     ServerEntry {
         name: name.into(),
         source: Source::Project("/proj".into()),
-        transport: Transport::Stdio { command: "npx".into(), args: vec!["srv".into()], env: Default::default() },
+        transport: Transport::Stdio {
+            command: "npx".into(),
+            args: vec!["srv".into()],
+            env: Default::default(),
+            env_file: None,
+        },
         timeout: Duration::from_secs(120),
         disabled: false,
         raw: r#"{"command":"npx"}"#.into(),

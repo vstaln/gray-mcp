@@ -60,7 +60,7 @@ fn parse_expands_and_keeps_raw_unexpanded() {
     let e = &s[0];
     assert!(e.disabled);
     match &e.transport {
-        Transport::Stdio { command, args, env } => {
+        Transport::Stdio { command, args, env, .. } => {
             assert_eq!(command, "1bin");
             assert_eq!(args, &vec!["--t".to_string(), "sekrit".to_string()]);
             assert_eq!(env.get("K").unwrap(), "sekrit");

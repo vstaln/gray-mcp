@@ -12,7 +12,7 @@ use crate::consent::ConsentStore;
 use crate::hub::{Hub, State};
 
 /// How long `gray mcp tools` waits for servers to settle.
-const TOOLS_WAIT: Duration = Duration::from_secs(5);
+const TOOLS_WAIT: Duration = Duration::from_secs(12);
 
 #[derive(Parser, Debug)]
 #[command(name = "gray-mcp", bin_name = "gray mcp", about = "MCP servers for gray", disable_help_subcommand = true)]
@@ -63,7 +63,7 @@ pub enum Cmd {
     Doctor {
         /// Only check this server.
         name: Option<String>,
-        /// Also launch each stdio server and list its tools (8s each).
+        /// Also launch each stdio server and list its tools (30s each).
         #[arg(long)]
         deep: bool,
     },

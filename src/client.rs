@@ -1,5 +1,6 @@
 //! One MCP connection (stdio child process or streamable HTTP) built on rmcp.
 
+use std::collections::BTreeMap;
 use std::process::Stdio;
 use std::time::Duration;
 
@@ -42,9 +43,13 @@ impl McpClient {
         let handler = Handler { server: entry.name.clone(), changed };
         let fut = async {
             match &entry.transport {
-                Transport::Stdio { command, args, env } => {
+                Transport::Stdio { command, args, env, env_file } => {
                     let mut cmd = tokio::process::Command::new(command);
-                    cmd.args(args).envs(env);
+                    cmd.args(args);
+                    if let Some(f) = env_file {
+                        cmd.envs(load_env_file(f)?);
+                    }
+                    cmd.envs(env);
                     let (proc, _stderr) = TokioChildProcess::builder(cmd)
                         .stderr(Stdio::null())
                         .spawn()
@@ -94,4 +99,25 @@ impl McpClient {
     pub fn close(&self) {
         self.service.cancellation_token().cancel();
     }
+}
+
+/// `KEY=VAL` file -> env map for a spawned stdio server. Blank lines and
+/// `#` comments are skipped, an optional `export ` prefix is allowed, and
+/// the value keeps everything after the first `=`. `~` expands to `$HOME`.
+fn load_env_file(path: &str) -> anyhow::Result<BTreeMap<String, String>> {
+    let path = crate::config::expand_home(path);
+    let text = std::fs::read_to_string(&path).with_context(|| format!("reading {}", path.display()))?;
+    let mut out = BTreeMap::new();
+    for (i, raw) in text.lines().enumerate() {
+        let line = raw.trim();
+        if line.is_empty() || line.starts_with('#') {
+            continue;
+        }
+        let line = line.strip_prefix("export ").unwrap_or(line);
+        let Some((k, v)) = line.split_once('=') else {
+            return Err(anyhow!("{}:{}: expected KEY=VAL", path.display(), i + 1));
+        };
+        out.insert(k.trim().to_string(), v.trim().to_string());
+    }
+    Ok(out)
 }

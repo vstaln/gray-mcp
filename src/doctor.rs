@@ -6,7 +6,7 @@
 //! `deep` additionally launches each stdio server and lists its tools
 //! (DEEP_TIMEOUT each, sequential), flagging dangerously-named tools.
 
-use std::path::{Path, PathBuf};
+use std::path::Path;
 use std::time::Duration;
 
 use serde_json::{Value, json};
@@ -14,7 +14,7 @@ use serde_json::{Value, json};
 use crate::config::{self, ServerEntry, Transport};
 
 /// Deep-probe budget per server (connect, then tools/list).
-pub const DEEP_TIMEOUT: Duration = Duration::from_secs(8);
+pub const DEEP_TIMEOUT: Duration = Duration::from_secs(30);
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Level {
@@ -43,21 +43,9 @@ pub struct Row {
 
 fn on_path(cmd: &str) -> bool {
     if cmd.contains('/') || cmd.starts_with('~') {
-        return expand_home(cmd).is_file();
+        return crate::config::expand_home(cmd).is_file();
     }
     std::env::var_os("PATH").map(|p| std::env::split_paths(&p).any(|d| d.join(cmd).is_file())).unwrap_or(false)
-}
-
-fn expand_home(p: &str) -> PathBuf {
-    if let Some(home) = std::env::var_os("HOME").map(PathBuf::from) {
-        if p == "~" {
-            return home;
-        }
-        if let Some(rest) = p.strip_prefix("~/") {
-            return home.join(rest);
-        }
-    }
-    PathBuf::from(p)
 }
 
 /// Does this config key name look like it carries a secret?
@@ -97,16 +85,22 @@ pub fn static_check(e: &ServerEntry) -> Row {
     let mut fail = false;
     let mut warn = false;
     match &e.transport {
-        Transport::Stdio { command, args, .. } => {
+        Transport::Stdio { command, args, env_file, .. } => {
             if !on_path(command) {
                 fail = true;
                 notes.push(format!("command not found: {command}"));
             }
             for a in args {
-                if pathish(a) && !expand_home(a).exists() {
+                if pathish(a) && !crate::config::expand_home(a).exists() {
                     warn = true;
                     notes.push(format!("arg path does not exist: {a}"));
                 }
+            }
+            if let Some(f) = env_file
+                && !crate::config::expand_home(f).is_file()
+            {
+                warn = true;
+                notes.push(format!("env_file does not exist: {f}"));
             }
             check_secrets(e, "env", &mut notes, &mut warn);
         }
@@ -119,6 +113,14 @@ pub fn static_check(e: &ServerEntry) -> Row {
                 }
             }
             check_secrets(e, "headers", &mut notes, &mut warn);
+            let has_env_file = serde_json::from_str::<Value>(&e.raw)
+                .ok()
+                .and_then(|v| v.get("env_file").cloned())
+                .is_some_and(|v| !v.is_null());
+            if has_env_file {
+                warn = true;
+                notes.push("\"env_file\" only applies to stdio servers — it is ignored here".into());
+            }
         }
     }
     if e.disabled {
@@ -222,7 +224,7 @@ pub fn render(rows: &[Row], warnings: &[String]) -> String {
 pub fn tool_def() -> Value {
     json!({
         "name": "mcp_doctor",
-        "description": "Pre-flight check of the configured MCP servers: command on PATH, URL parses, suspicious config (hardcoded secrets, missing arg paths). 'name' limits to one server; 'deep' also launches each stdio server and lists its tools (8s each). Report only — never modifies anything.",
+        "description": "Pre-flight check of the configured MCP servers: command on PATH, URL parses, suspicious config (hardcoded secrets, missing arg paths). 'name' limits to one server; 'deep' also launches each stdio server and lists its tools (30s each). Report only — never modifies anything.",
         "parameters": {
             "type": "object",
             "properties": {

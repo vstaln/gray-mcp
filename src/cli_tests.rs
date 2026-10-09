@@ -31,7 +31,12 @@ fn entry(name: &str, source: Source) -> ServerEntry {
     ServerEntry {
         name: name.into(),
         source,
-        transport: Transport::Stdio { command: "srv".into(), args: vec!["--x".into()], env: Default::default() },
+        transport: Transport::Stdio {
+            command: "srv".into(),
+            args: vec!["--x".into()],
+            env: Default::default(),
+            env_file: None,
+        },
         timeout: Duration::from_secs(60),
         disabled: false,
         raw: "{}".into(),

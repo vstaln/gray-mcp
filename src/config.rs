@@ -2,10 +2,11 @@
 //! project file (`<cwd>/.mcp.json`), project winning on a name clash.
 //!
 //! Shape (Claude Code compatible):
-//! `{"mcpServers": {"<name>": {"command", "args", "env", "url", "headers",
+//! `{"mcpServers": {"<name>": {"command", "args", "env", "env_file", "url", "headers",
 //! "timeout", "disabled"}}}`. Exactly one of `command` / `url`. `${VAR}` is
-//! expanded in `command`, `args`, `env` values, `url` and `headers` values;
-//! an unset variable invalidates the entry (skipped with a warning).
+//! expanded in `command`, `args`, `env` values, `env_file`, `url` and
+//! `headers` values; an unset variable invalidates the entry (skipped with a
+//! warning).
 
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
@@ -29,8 +30,18 @@ pub enum Source {
 /// How to reach the server.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Transport {
-    Stdio { command: String, args: Vec<String>, env: BTreeMap<String, String> },
-    Http { url: String, headers: BTreeMap<String, String> },
+    Stdio {
+        command: String,
+        args: Vec<String>,
+        env: BTreeMap<String, String>,
+        /// `KEY=VAL` file loaded into the spawned env; secrets live there,
+        /// not in this config. Entries in `env` win over the file.
+        env_file: Option<String>,
+    },
+    Http {
+        url: String,
+        headers: BTreeMap<String, String>,
+    },
 }
 
 impl Transport {
@@ -68,6 +79,19 @@ pub struct ServerEntry {
 pub struct Config {
     pub servers: Vec<ServerEntry>,
     pub warnings: Vec<String>,
+}
+
+/// `~`/`~/x` expand to `$HOME`; anything else passes through.
+pub fn expand_home(p: &str) -> PathBuf {
+    if let Some(home) = std::env::var_os("HOME").map(PathBuf::from) {
+        if p == "~" {
+            return home;
+        }
+        if let Some(rest) = p.strip_prefix("~/") {
+            return home.join(rest);
+        }
+    }
+    PathBuf::from(p)
 }
 
 /// `~/.gray/mcp.json`.
@@ -208,7 +232,12 @@ fn parse_entry(
                     .collect::<Result<Vec<_>, _>>()?,
                 Some(_) => return Err("\"args\" must be an array".into()),
             };
-            Transport::Stdio { command: ex(command)?, args, env: ex_map(str_map("env")?)? }
+            Transport::Stdio {
+                command: ex(command)?,
+                args,
+                env: ex_map(str_map("env")?)?,
+                env_file: str_field("env_file")?.map(ex).transpose()?,
+            }
         }
         (None, Some(url)) => Transport::Http { url: ex(url)?, headers: ex_map(str_map("headers")?)? },
     };

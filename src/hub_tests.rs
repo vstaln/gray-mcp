@@ -13,7 +13,7 @@ fn entry(name: &str) -> ServerEntry {
     ServerEntry {
         name: name.into(),
         source: Source::User,
-        transport: Transport::Stdio { command: "x".into(), args: vec![], env: BTreeMap::new() },
+        transport: Transport::Stdio { command: "x".into(), args: vec![], env: BTreeMap::new(), env_file: None },
         timeout: Duration::from_secs(5),
         disabled: false,
         raw: "{}".into(),
