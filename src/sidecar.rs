@@ -158,6 +158,7 @@ fn state_line(state: &State) -> String {
         State::Ready { tools } => format!("ready ({tools} tools)"),
         State::Failed { error } => format!("failed: {error}"),
         State::Denied => "denied".into(),
+        State::Dormant => "dormant (starts on use)".into(),
         State::Disabled => "disabled".into(),
     }
 }
@@ -320,6 +321,21 @@ pub async fn run() -> anyhow::Result<()> {
     let hub = Hub::new(servers, crate::hub::real_connect());
     for p in &pending {
         hub.mark_pending(p);
+    }
+    // Lazy upstreams: seed advertised tools from the last session's
+    // defs and leave each cached server Dormant — its child spawns on
+    // the first `tool/call` routed to it. Uncached/identity-changed
+    // servers stay Connecting and spawn at boot exactly as before.
+    if let Some(cp) = crate::toolcache::path() {
+        if crate::toolcache::lazy_enabled() {
+            let cache = crate::toolcache::ToolCache::load(&cp);
+            for e in &cfg.servers {
+                if let Some(tools) = cache.get(&e.name, &crate::toolcache::identity(e)) {
+                    hub.seed_dormant(&e.name, tools);
+                }
+            }
+        }
+        hub.set_cache_path(cp);
     }
     hub.start().await;
 

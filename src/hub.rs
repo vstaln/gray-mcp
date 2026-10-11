@@ -59,6 +59,8 @@ pub enum State {
     },
     Denied,
     Disabled,
+    /// Cached tools advertised; upstream spawns on first `tool/call`.
+    Dormant,
 }
 
 /// Reconnect backoff: `base * 2^n`, capped at `MAX_BACKOFF`, at most
@@ -75,6 +77,13 @@ pub struct Hub {
     changed_tx: watch::Sender<u64>,
     /// Sender handed to connections so they can report `tools/list_changed`;
     /// set by `start`, used by `start_server`.
+    /// `~/.gray/mcp-tools-cache.json` — rebuilt server defs persist here
+    /// so the next sidecar can seed dormant. `None` disables persistence.
+    cache_path: RwLock<Option<std::path::PathBuf>>,
+    /// Dormant seeds per server: `rebuild` rewrites table+defs from live
+    /// conns, so a still-dormant server's advertised rows must be
+    /// re-appended or the first unrelated rebuild would un-advertise them.
+    seeds: RwLock<HashMap<String, Vec<crate::toolcache::CachedTool>>>,
     notify_tx: RwLock<Option<UnboundedSender<String>>>,
     connect: ConnectFn,
     backoff_base: Duration,
@@ -106,7 +115,12 @@ impl Hub {
     fn build(servers: Vec<ServerEntry>, connect: ConnectFn, backoff_base: Duration) -> Self {
         let states = servers
             .iter()
-            .map(|s| (s.name.clone(), if s.disabled { State::Disabled } else { State::Connecting }))
+            .map(|s| {
+                (
+                    s.name.clone(),
+                    if s.disabled { State::Disabled } else { State::Connecting },
+                )
+            })
             .collect();
         let (changed_tx, _) = watch::channel(0);
         Self {
@@ -117,6 +131,8 @@ impl Hub {
             defs: RwLock::new(Vec::new()),
             changed_tx,
             notify_tx: RwLock::new(None),
+            cache_path: RwLock::new(None),
+            seeds: RwLock::new(HashMap::new()),
             connect,
             backoff_base,
             generation: RwLock::new(0),
@@ -138,6 +154,34 @@ impl Hub {
     /// Hold a server back until consent arrives (`start` skips it).
     pub fn mark_pending(&self, name: &str) {
         self.set_state(name, State::Pending);
+    }
+
+    /// Persist rebuilt defs for the next sidecar's dormant seeding.
+    pub fn set_cache_path(&self, path: std::path::PathBuf) {
+        *self.cache_path.write().unwrap() = Some(path);
+    }
+
+    /// Advertise cached tools without connecting: table + defs get the
+    /// stored rows and the server goes [`State::Dormant`]. Only applies
+    /// while the server is still `Connecting` — consent-pending or
+    /// disabled servers are never seeded.
+    pub fn seed_dormant(&self, server: &str, tools: &[crate::toolcache::CachedTool]) {
+        if self.state_of(server) != Some(State::Connecting) {
+            return;
+        }
+        {
+            let mut table = self.table.write().unwrap();
+            let mut defs = self.defs.write().unwrap();
+            for t in tools {
+                table.insert(t.mcp.clone(), (server.to_string(), t.raw.clone()));
+                defs.push(t.def.clone());
+            }
+        }
+        self.seeds
+            .write()
+            .unwrap()
+            .insert(server.to_string(), tools.to_vec());
+        self.set_state(server, State::Dormant);
     }
 
     fn set_state(&self, name: &str, state: State) {
@@ -250,14 +294,35 @@ impl Hub {
                 }
             };
             self.set_state(&server, State::Ready { tools: tools.len() });
+            let mut records = Vec::with_capacity(tools.len());
             for t in tools {
                 let name = names::tool_name(&server, &t.name, &mut taken);
                 table.insert(name.clone(), (server.clone(), t.name.to_string()));
-                defs.push(json!({
+                let def = json!({
                     "name": name,
                     "description": t.description.as_deref().unwrap_or(""),
                     "parameters": names::fix_schema(Some(t.schema_as_json_value())),
-                }));
+                });
+                records.push(crate::toolcache::CachedTool {
+                    mcp: name,
+                    raw: t.name.to_string(),
+                    def: def.clone(),
+                });
+                defs.push(def);
+            }
+            // Persist this server's defs so the next sidecar can seed
+            // dormant instead of spawning just to re-list tools.
+            self.cache_store(&server, records);
+        }
+        // Still-dormant servers keep their seeded rows: rebuild rewrites
+        // the table from live conns only, so without this a connected
+        // server's rebuild would silently un-advertise every sleeper.
+        for (server, tools) in self.seeds.read().unwrap().iter() {
+            if self.state_of(server) == Some(State::Dormant) {
+                for t in tools {
+                    table.insert(t.mcp.clone(), (server.clone(), t.raw.clone()));
+                    defs.push(t.def.clone());
+                }
             }
         }
         *self.table.write().unwrap() = table;
@@ -275,15 +340,49 @@ impl Hub {
         }
     }
 
+    /// Write one server's rebuilt defs to the tool cache (merge into the
+    /// existing file; other servers' entries are preserved).
+    fn cache_store(&self, server: &str, tools: Vec<crate::toolcache::CachedTool>) {
+        let Some(path) = self.cache_path.read().unwrap().clone() else {
+            return;
+        };
+        let entry = self.servers.read().unwrap().iter().find(|s| s.name == server).cloned();
+        let Some(entry) = entry else { return };
+        let mut cache = crate::toolcache::ToolCache::load(&path);
+        cache.set(server, crate::toolcache::identity(&entry), tools);
+        cache.save(&path);
+    }
+
     pub fn tools(&self) -> Vec<Value> {
         self.defs.read().unwrap().clone()
     }
 
     /// Route a model tool call; every failure becomes an `is_error` reply.
-    pub async fn call(&self, mcp_name: &str, args: Value) -> Value {
+    pub async fn call(self: &Arc<Self>, mcp_name: &str, args: Value) -> Value {
         let Some((server, tool)) = self.table.read().unwrap().get(mcp_name).cloned() else {
             return error_reply(format!("unknown tool {mcp_name}"));
         };
+        // Dormant servers spawn on first use: `start_server` kicks the
+        // connect loop, then we wait for Ready/Failed before the call.
+        if self.conns.read().unwrap().get(&server).is_none() {
+            if self.state_of(&server) == Some(State::Dormant) {
+                self.start_server(&server).await;
+            }
+            let wait_until = tokio::time::Instant::now() + Duration::from_secs(30);
+            loop {
+                match self.state_of(&server) {
+                    Some(State::Ready { .. }) => break,
+                    Some(State::Failed { .. }) | Some(State::Denied) | Some(State::Disabled) => {
+                        return error_reply(format!("{server}: not connected"));
+                    }
+                    _ => {}
+                }
+                if tokio::time::Instant::now() >= wait_until {
+                    return error_reply(format!("{server}: connect timed out"));
+                }
+                tokio::time::sleep(Duration::from_millis(50)).await;
+            }
+        }
         let conn = self.conns.read().unwrap().get(&server).cloned();
         let Some(conn) = conn else {
             return error_reply(format!("{server}: not connected"));
@@ -328,6 +427,7 @@ impl Hub {
                 states.insert(s.name.clone(), if s.disabled { State::Disabled } else { State::Connecting });
             }
             *self.servers.write().unwrap() = servers;
+            self.seeds.write().unwrap().clear();
         }
         self.rebuild().await;
         self.start().await;

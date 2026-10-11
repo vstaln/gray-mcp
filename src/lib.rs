@@ -17,6 +17,7 @@ pub mod hub;
 pub mod names;
 pub mod server;
 pub mod sidecar;
+pub mod toolcache;
 
 /// Manifest name: the host forwards `gray mcp ...` to this binary.
 pub const PLUGIN_NAME: &str = "mcp";
