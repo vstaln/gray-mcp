@@ -72,7 +72,19 @@ pub enum Cmd {
 }
 
 pub async fn run(args: Vec<String>) -> anyhow::Result<()> {
-    let cli = Cli::try_parse_from(std::iter::once("gray-mcp".to_string()).chain(args))?;
+    if args.iter().all(|a| a == "help") && !args.is_empty() {
+        use clap::CommandFactory;
+        Cli::command().print_help()?;
+        println!();
+        return Ok(());
+    }
+    let cli = match Cli::try_parse_from(std::iter::once("gray-mcp".to_string()).chain(args)) {
+        Ok(c) => c,
+        Err(e) => {
+            let _ = e.print();
+            std::process::exit(if e.use_stderr() { 1 } else { 0 });
+        }
+    };
     let cwd = std::env::current_dir()?;
     match cli.cmd {
         Cmd::List { json } => {
