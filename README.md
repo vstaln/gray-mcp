@@ -48,6 +48,16 @@ the install prompt so project-server consent can actually ask you;
 `gray plugin capabilities mcp` shows the state. Ungranted, project
 servers are denied without asking.
 
+## Release tarball
+
+Seats and other glibc-2.36 hosts (Debian bookworm) can only run a static
+binary — a plain `cargo build --release` links against the build machine's
+glibc and dies at exec with `GLIBC_2.39 not found`, which gray reports as
+"sidecar child closed stdout". `scripts/release-tarball.sh` builds the
+`x86_64-unknown-linux-musl` target with `cross`, refuses a non-static
+result, and writes `dist/gray-mcp-<version>.tar.gz` plus its sha256 for the
+registry row.
+
 ## Configuration
 
 `~/.gray/mcp.json` is the user file; `<cwd>/.mcp.json` is the project
