@@ -83,11 +83,12 @@ pub struct Config {
 
 /// `~`/`~/x` expand to `$HOME`; anything else passes through.
 pub fn expand_home(p: &str) -> PathBuf {
-    if let Some(home) = std::env::var_os("HOME").map(PathBuf::from) {
+    let home = std::env::var_os("HOME").or_else(|| std::env::var_os("USERPROFILE")).map(PathBuf::from);
+    if let Some(home) = home {
         if p == "~" {
             return home;
         }
-        if let Some(rest) = p.strip_prefix("~/") {
+        if let Some(rest) = p.strip_prefix("~/").or_else(|| p.strip_prefix("~\\")) {
             return home.join(rest);
         }
     }
