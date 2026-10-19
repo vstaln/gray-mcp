@@ -42,10 +42,30 @@ pub struct Row {
 }
 
 fn on_path(cmd: &str) -> bool {
-    if cmd.contains('/') || cmd.starts_with('~') {
+    if cmd.contains('/') || cmd.contains('\\') || cmd.starts_with('~') {
         return crate::config::expand_home(cmd).is_file();
     }
-    std::env::var_os("PATH").map(|p| std::env::split_paths(&p).any(|d| d.join(cmd).is_file())).unwrap_or(false)
+    let exts = pathext();
+    std::env::var_os("PATH")
+        .map(|p| {
+            std::env::split_paths(&p)
+                .any(|d| d.join(cmd).is_file() || exts.iter().any(|e| d.join(format!("{cmd}{e}")).is_file()))
+        })
+        .unwrap_or(false)
+}
+
+/// Suffixes a bare command name can carry — `PATHEXT` on Windows, none on
+/// unix (a unix executable has no magic extension).
+#[cfg(windows)]
+fn pathext() -> Vec<String> {
+    std::env::var("PATHEXT")
+        .map(|v| v.split(';').filter(|s| !s.is_empty()).map(|s| s.to_ascii_lowercase()).collect())
+        .unwrap_or_else(|_| [".com", ".exe", ".bat", ".cmd"].map(String::from).to_vec())
+}
+
+#[cfg(not(windows))]
+fn pathext() -> Vec<String> {
+    Vec::new()
 }
 
 /// Does this config key name look like it carries a secret?
@@ -76,7 +96,10 @@ fn check_secrets(e: &ServerEntry, field: &str, notes: &mut Vec<String>, warn: &m
 
 /// Arg looks like a filesystem path worth existence-checking.
 fn pathish(arg: &str) -> bool {
-    arg == "~" || arg.starts_with("~/") || (arg.starts_with('/') && !arg.contains('='))
+    arg == "~"
+        || arg.starts_with("~/")
+        || arg.starts_with("~\\")
+        || (Path::new(arg).is_absolute() && !arg.contains('='))
 }
 
 /// Static checks. `Fail` when the server can't launch, `Warn` for smells.

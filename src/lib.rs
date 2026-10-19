@@ -53,7 +53,7 @@ pub fn is_sidecar_invocation(args: &[String], stdin_is_tty: bool) -> bool {
 pub fn gray_home() -> anyhow::Result<PathBuf> {
     gray_home_from(
         std::env::var_os("GRAY_HOME").map(|v| v.to_string_lossy().into_owned()),
-        std::env::var_os(if cfg!(windows) { "USERPROFILE" } else { "HOME" }).map(|v| v.to_string_lossy().into_owned()),
+        std::env::var_os("HOME").or_else(|| std::env::var_os("USERPROFILE")).map(|v| v.to_string_lossy().into_owned()),
     )
 }
 
@@ -62,7 +62,7 @@ fn gray_home_from(gray_home: Option<String>, home: Option<String>) -> anyhow::Re
         .filter(|v| !v.trim().is_empty())
         .map(PathBuf::from)
         .or_else(|| home.filter(|h| !h.is_empty()).map(|h| PathBuf::from(h).join(".gray")))
-        .ok_or_else(|| anyhow::anyhow!("cannot resolve home: set GRAY_HOME or HOME"))
+        .ok_or_else(|| anyhow::anyhow!("cannot resolve home: set GRAY_HOME or HOME/USERPROFILE"))
 }
 
 #[cfg(test)]

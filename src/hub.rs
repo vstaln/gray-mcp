@@ -115,12 +115,7 @@ impl Hub {
     fn build(servers: Vec<ServerEntry>, connect: ConnectFn, backoff_base: Duration) -> Self {
         let states = servers
             .iter()
-            .map(|s| {
-                (
-                    s.name.clone(),
-                    if s.disabled { State::Disabled } else { State::Connecting },
-                )
-            })
+            .map(|s| (s.name.clone(), if s.disabled { State::Disabled } else { State::Connecting }))
             .collect();
         let (changed_tx, _) = watch::channel(0);
         Self {
@@ -177,10 +172,7 @@ impl Hub {
                 defs.push(t.def.clone());
             }
         }
-        self.seeds
-            .write()
-            .unwrap()
-            .insert(server.to_string(), tools.to_vec());
+        self.seeds.write().unwrap().insert(server.to_string(), tools.to_vec());
         self.set_state(server, State::Dormant);
     }
 
@@ -303,11 +295,7 @@ impl Hub {
                     "description": t.description.as_deref().unwrap_or(""),
                     "parameters": names::fix_schema(Some(t.schema_as_json_value())),
                 });
-                records.push(crate::toolcache::CachedTool {
-                    mcp: name,
-                    raw: t.name.to_string(),
-                    def: def.clone(),
-                });
+                records.push(crate::toolcache::CachedTool { mcp: name, raw: t.name.to_string(), def: def.clone() });
                 defs.push(def);
             }
             // Persist this server's defs so the next sidecar can seed
