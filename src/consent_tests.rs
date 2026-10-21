@@ -64,10 +64,12 @@ fn ask_params_shape() {
     let q = &p["questions"][0];
     assert_eq!(q["id"], "fs");
     assert_eq!(q["header"], "MCP server");
-    let text = q["question"].as_str().unwrap();
-    assert!(text.contains("npx srv") && text.contains("/proj/.mcp.json"), "{text}");
+    assert_eq!(q["question"], "Start MCP server fs?");
+    assert_eq!(q["no_other"], json!(true));
+    let detail = q["detail"].as_str().unwrap();
+    assert!(detail.contains("npx srv") && detail.contains("/proj/.mcp.json"), "{detail}");
     let labels: Vec<&str> = q["options"].as_array().unwrap().iter().map(|o| o["label"].as_str().unwrap()).collect();
-    assert_eq!(labels, vec!["Allow", "Deny"]);
+    assert_eq!(labels, vec!["Allow", "Allow for this session", "Deny"]);
 }
 
 #[test]
@@ -82,11 +84,18 @@ fn parse_ask_result_maps_labels() {
     let r = json!({"answers": {
         "a": {"answers": ["Allow", "user_note: fine"]},
         "b": {"answers": ["Deny"]},
-        "c": {"answers": ["allow"]}
+        "c": {"answers": ["allow"]},
+        "d": {"answers": ["Allow for this session"]}
     }});
     assert_eq!(
-        parse_ask_result(&r, &["a", "b", "c", "missing"]),
-        vec![("a".into(), true), ("b".into(), false), ("c".into(), false), ("missing".into(), false)]
+        parse_ask_result(&r, &["a", "b", "c", "d", "missing"]),
+        vec![
+            ("a".into(), Decision::Remember),
+            ("b".into(), Decision::Deny),
+            ("c".into(), Decision::Deny),
+            ("d".into(), Decision::Session),
+            ("missing".into(), Decision::Deny),
+        ]
     );
-    assert_eq!(parse_ask_result(&json!({}), &["a"]), vec![("a".into(), false)]);
+    assert_eq!(parse_ask_result(&json!({}), &["a"]), vec![("a".into(), Decision::Deny)]);
 }

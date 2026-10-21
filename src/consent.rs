@@ -14,7 +14,18 @@ use crate::config::ServerEntry;
 /// `host/ask` allows at most this many questions per request.
 pub const MAX_QUESTIONS: usize = 3;
 pub const ALLOW: &str = "Allow";
+pub const ALLOW_SESSION: &str = "Allow for this session";
 pub const DENY: &str = "Deny";
+
+/// What the user picked for one pending server.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Decision {
+    /// Start it and persist consent for this project.
+    Remember,
+    /// Start it for this session only; ask again next time.
+    Session,
+    Deny,
+}
 
 /// Persisted set of allowed keys: `{"allowed": ["<hex>", …]}`.
 #[derive(Debug, Clone)]
@@ -90,13 +101,12 @@ pub fn ask_params(entries: &[&ServerEntry]) -> Value {
             json!({
                 "id": e.name,
                 "header": "MCP server",
-                "question": format!(
-                    "{where_} wants to start MCP server '{}': {}. Allow it to run?",
-                    e.name,
-                    e.transport.describe()
-                ),
+                "question": format!("Start MCP server {}?", e.name),
+                "detail": format!("{}  ({where_})", e.transport.describe()),
+                "no_other": true,
                 "options": [
-                    {"label": ALLOW, "description": "start it now and remember for this project"},
+                    {"label": ALLOW, "description": "start it and remember for this project"},
+                    {"label": ALLOW_SESSION, "description": "start it now, ask again next session"},
                     {"label": DENY, "description": "skip it this session"}
                 ]
             })
@@ -105,19 +115,28 @@ pub fn ask_params(entries: &[&ServerEntry]) -> Value {
     json!({ "questions": questions, "blocking": true })
 }
 
-/// Map a `host/ask` result (`{"answers": {"<qid>": {"answers": [label, …]}}}`)
-/// to `(name, allowed)` for every name asked. Only a literal `Allow` counts.
-pub fn parse_ask_result(result: &Value, names: &[&str]) -> Vec<(String, bool)> {
+/// Map a `host/ask` result (`{"answers": {"<qid>": {"answers": [label, ...]}}}`)
+/// to a decision for every name asked. Only exact labels count; anything
+/// else (missing, skipped, unknown) is a deny.
+pub fn parse_ask_result(result: &Value, names: &[&str]) -> Vec<(String, Decision)> {
     let map = result.get("answers").and_then(Value::as_object);
     names
         .iter()
         .map(|n| {
-            let allowed = map
+            let picked: Vec<&str> = map
                 .and_then(|m| m.get(*n))
                 .and_then(|e| e.get("answers"))
                 .and_then(Value::as_array)
-                .is_some_and(|a| a.iter().any(|v| v.as_str() == Some(ALLOW)));
-            (n.to_string(), allowed)
+                .map(|a| a.iter().filter_map(Value::as_str).collect())
+                .unwrap_or_default();
+            let decision = if picked.contains(&ALLOW) {
+                Decision::Remember
+            } else if picked.contains(&ALLOW_SESSION) {
+                Decision::Session
+            } else {
+                Decision::Deny
+            };
+            (n.to_string(), decision)
         })
         .collect()
 }

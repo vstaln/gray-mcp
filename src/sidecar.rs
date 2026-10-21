@@ -273,15 +273,16 @@ fn spawn_consent(pending: Vec<String>, hub: Arc<Hub>, io: Arc<Io>, cwd: PathBuf)
                         log::warn!("host/ask failed; denying project servers: {e:#}");
                         warned = true;
                     }
-                    names.iter().map(|n| (n.to_string(), false)).collect()
+                    names.iter().map(|n| (n.to_string(), consent::Decision::Deny)).collect()
                 }
             };
-            for (name, allowed) in decisions {
-                if !allowed {
+            for (name, decision) in decisions {
+                if decision == consent::Decision::Deny {
                     hub.deny(&name);
                     continue;
                 }
-                if let Some(entry) = batch.iter().find(|e| e.name == name)
+                if decision == consent::Decision::Remember
+                    && let Some(entry) = batch.iter().find(|e| e.name == name)
                     && let Source::Project(dir) = &entry.source
                     && let Some(store) = store.as_mut()
                     && let Err(e) = store.allow(ConsentStore::key(dir, &entry.name, &entry.raw))
