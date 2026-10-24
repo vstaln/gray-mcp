@@ -169,7 +169,7 @@ async fn reload_replaces_servers() {
     let (hub, _, _) = setup(&[("a", &["x"])]);
     hub.start().await;
     ready(&hub, 1).await;
-    hub.reload(vec![]).await;
+    hub.reload(vec![], &[]).await;
     assert!(hub.tools().is_empty());
     assert!(hub.status().is_empty());
 }

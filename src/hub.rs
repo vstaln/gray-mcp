@@ -400,8 +400,9 @@ impl Hub {
             .collect()
     }
 
-    /// Close everything, swap in `servers`, and start again.
-    pub async fn reload(self: &Arc<Self>, servers: Vec<ServerEntry>) {
+    /// Close everything, swap in `servers`, and start again. Servers in
+    /// `pending` stay `Pending` (consent gate) instead of connecting.
+    pub async fn reload(self: &Arc<Self>, servers: Vec<ServerEntry>, pending: &[String]) {
         *self.generation.write().unwrap() += 1;
         *self.notify_tx.write().unwrap() = None;
         let old: Vec<Arc<dyn Conn>> = self.conns.write().unwrap().drain().map(|(_, c)| c).collect();
@@ -412,7 +413,14 @@ impl Hub {
             let mut states = self.states.write().unwrap();
             states.clear();
             for s in &servers {
-                states.insert(s.name.clone(), if s.disabled { State::Disabled } else { State::Connecting });
+                let state = if pending.contains(&s.name) {
+                    State::Pending
+                } else if s.disabled {
+                    State::Disabled
+                } else {
+                    State::Connecting
+                };
+                states.insert(s.name.clone(), state);
             }
             *self.servers.write().unwrap() = servers;
             self.seeds.write().unwrap().clear();
