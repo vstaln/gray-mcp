@@ -350,6 +350,18 @@ pub async fn run() -> anyhow::Result<()> {
                 if method == "plugin/shutdown" {
                     break;
                 }
+                if method == "tool/call" {
+                    let hub = Arc::clone(&hub);
+                    let io = Arc::clone(&io);
+                    let cwd = cwd.clone();
+                    tokio::spawn(async move {
+                        let result = handle(&frame, &hub, &io, &cwd).await;
+                        if let (Some(result), Some(id)) = (result, frame.get("id")) {
+                            io.reply(id, result);
+                        }
+                    });
+                    continue;
+                }
                 let result = handle(&frame, &hub, &io, &cwd).await;
                 if let (Some(result), Some(id)) = (result, frame.get("id")) {
                     io.reply(id, result);

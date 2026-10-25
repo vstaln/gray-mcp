@@ -290,11 +290,14 @@ impl Hub {
             for t in tools {
                 let name = names::tool_name(&server, &t.name, &mut taken);
                 table.insert(name.clone(), (server.clone(), t.name.to_string()));
-                let def = json!({
+                let mut def = json!({
                     "name": name,
                     "description": t.description.as_deref().unwrap_or(""),
                     "parameters": names::fix_schema(Some(t.schema_as_json_value())),
                 });
+                if t.annotations.as_ref().and_then(|a| a.read_only_hint) == Some(true) {
+                    def["read_only"] = json!(true);
+                }
                 records.push(crate::toolcache::CachedTool { mcp: name, raw: t.name.to_string(), def: def.clone() });
                 defs.push(def);
             }
