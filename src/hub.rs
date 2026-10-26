@@ -345,7 +345,25 @@ impl Hub {
     }
 
     pub fn tools(&self) -> Vec<Value> {
-        self.defs.read().unwrap().clone()
+        let table = self.table.read().unwrap();
+        let (mut defs, slimmed) =
+            crate::slim::publish(&self.defs.read().unwrap(), |n| table.get(n).map(|(s, _)| s.clone()));
+        if slimmed {
+            defs.push(crate::slim::schema_tool_def());
+        }
+        defs
+    }
+
+    pub fn schema(&self, args: &Value) -> Value {
+        let tool = args.get("tool").and_then(Value::as_str).unwrap_or("");
+        let defs = self.defs.read().unwrap();
+        match defs.iter().find(|d| d.get("name").and_then(Value::as_str) == Some(tool)) {
+            Some(d) => json!({ "content": serde_json::to_string_pretty(&json!({
+                "description": d.get("description"),
+                "parameters": d.get("parameters"),
+            })).unwrap_or_default() }),
+            None => error_reply(format!("unknown tool {tool}")),
+        }
     }
 
     /// Route a model tool call; every failure becomes an `is_error` reply.

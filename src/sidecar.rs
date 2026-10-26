@@ -116,6 +116,8 @@ pub async fn handle(req: &Value, hub: &Arc<Hub>, io: &Io, cwd: &Path) -> Option<
                     .map(PathBuf::from)
                     .unwrap_or_else(|| cwd.to_path_buf());
                 Some(crate::doctor::call(&args, &cwd).await)
+            } else if name == crate::slim::SCHEMA_TOOL {
+                Some(hub.schema(&args))
             } else {
                 Some(hub.call(name, args).await)
             }
