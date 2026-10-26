@@ -66,7 +66,9 @@ async fn ready(hub: &Arc<Hub>, want: usize) {
     panic!("hub never reached {want} tools: {:?}", hub.tools());
 }
 
-fn setup(servers: &[(&str, &[&str])]) -> (Arc<Hub>, Tools, Arc<Mutex<Vec<UnboundedSender<String>>>>) {
+type Senders = Arc<Mutex<Vec<UnboundedSender<String>>>>;
+
+fn setup(servers: &[(&str, &[&str])]) -> (Arc<Hub>, Tools, Senders) {
     let tools: Tools = Default::default();
     for (s, ts) in servers {
         tools.lock().unwrap().insert(s.to_string(), Arc::new(Mutex::new(ts.iter().map(|t| tool(t)).collect())));

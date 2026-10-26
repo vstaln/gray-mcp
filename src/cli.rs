@@ -325,13 +325,7 @@ async fn tools(cwd: &Path) -> String {
     // A server may legitimately need its full configured `timeout` for the
     // spawn + handshake (npx cold starts are slow); wait for the slowest
     // configured server, bounded by TOOLS_WAIT_MAX.
-    let wait = cfg
-        .servers
-        .iter()
-        .map(|s| s.timeout)
-        .max()
-        .unwrap_or(TOOLS_WAIT)
-        .clamp(TOOLS_WAIT, TOOLS_WAIT_MAX);
+    let wait = cfg.servers.iter().map(|s| s.timeout).max().unwrap_or(TOOLS_WAIT).clamp(TOOLS_WAIT, TOOLS_WAIT_MAX);
     let deadline = tokio::time::Instant::now() + wait;
     while hub.status().iter().any(|(_, s)| matches!(s, State::Connecting)) {
         if tokio::time::timeout_at(deadline, rx.changed()).await.is_err() {
