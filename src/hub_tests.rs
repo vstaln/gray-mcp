@@ -66,7 +66,9 @@ async fn ready(hub: &Arc<Hub>, want: usize) {
     panic!("hub never reached {want} tools: {:?}", hub.tools());
 }
 
-fn setup(servers: &[(&str, &[&str])]) -> (Arc<Hub>, Tools, Arc<Mutex<Vec<UnboundedSender<String>>>>) {
+type Senders = Arc<Mutex<Vec<UnboundedSender<String>>>>;
+
+fn setup(servers: &[(&str, &[&str])]) -> (Arc<Hub>, Tools, Senders) {
     let tools: Tools = Default::default();
     for (s, ts) in servers {
         tools.lock().unwrap().insert(s.to_string(), Arc::new(Mutex::new(ts.iter().map(|t| tool(t)).collect())));
@@ -169,7 +171,7 @@ async fn reload_replaces_servers() {
     let (hub, _, _) = setup(&[("a", &["x"])]);
     hub.start().await;
     ready(&hub, 1).await;
-    hub.reload(vec![]).await;
+    hub.reload(vec![], &[]).await;
     assert!(hub.tools().is_empty());
     assert!(hub.status().is_empty());
 }

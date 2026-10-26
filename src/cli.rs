@@ -11,8 +11,11 @@ use crate::config::{self, Config, Source};
 use crate::consent::ConsentStore;
 use crate::hub::{Hub, State};
 
-/// How long `gray mcp tools` waits for servers to settle.
+/// How long `gray mcp tools` waits for servers to settle, at minimum.
 const TOOLS_WAIT: Duration = Duration::from_secs(12);
+/// Upper bound on that wait — a server's configured `timeout` raises the
+/// floor, never past this cap.
+const TOOLS_WAIT_MAX: Duration = Duration::from_secs(60);
 
 #[derive(Parser, Debug)]
 #[command(name = "gray-mcp", bin_name = "gray mcp", about = "MCP servers for gray", disable_help_subcommand = true)]
@@ -319,7 +322,11 @@ async fn tools(cwd: &Path) -> String {
     }
     hub.start().await;
     let mut rx = hub.subscribe();
-    let deadline = tokio::time::Instant::now() + TOOLS_WAIT;
+    // A server may legitimately need its full configured `timeout` for the
+    // spawn + handshake (npx cold starts are slow); wait for the slowest
+    // configured server, bounded by TOOLS_WAIT_MAX.
+    let wait = cfg.servers.iter().map(|s| s.timeout).max().unwrap_or(TOOLS_WAIT).clamp(TOOLS_WAIT, TOOLS_WAIT_MAX);
+    let deadline = tokio::time::Instant::now() + wait;
     while hub.status().iter().any(|(_, s)| matches!(s, State::Connecting)) {
         if tokio::time::timeout_at(deadline, rx.changed()).await.is_err() {
             break;

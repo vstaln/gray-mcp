@@ -12,7 +12,6 @@ use std::io::Write;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
-use std::time::Duration;
 
 use anyhow::anyhow;
 use serde_json::{Value, json};
@@ -21,11 +20,6 @@ use tokio::sync::{mpsc, oneshot};
 use crate::config::{self, Source};
 use crate::consent::{self, ConsentStore};
 use crate::hub::{Hub, State};
-
-/// How long the first `plugin/tools` waits for servers to come up.
-/// Node-based servers cold-start in seconds; 10s covers them while still
-/// bounding a hung server (the answer then goes out with whatever is up).
-pub const FIRST_TOOLS_WAIT: Duration = Duration::from_secs(10);
 
 /// Frame writer plus the table of our own outstanding `host/*` requests.
 pub struct Io {
@@ -122,6 +116,8 @@ pub async fn handle(req: &Value, hub: &Arc<Hub>, io: &Io, cwd: &Path) -> Option<
                     .map(PathBuf::from)
                     .unwrap_or_else(|| cwd.to_path_buf());
                 Some(crate::doctor::call(&args, &cwd).await)
+            } else if name == crate::slim::SCHEMA_TOOL {
+                Some(hub.schema(&args))
             } else {
                 Some(hub.call(name, args).await)
             }
@@ -183,10 +179,7 @@ pub async fn command(argv: &[String], hub: &Arc<Hub>, cwd: &Path) -> String {
             let mut hub_servers = cfg.servers;
             let consent = ConsentStore::default_path().map(ConsentStore::load);
             let pending = split_pending(&mut hub_servers, consent.as_ref().ok());
-            hub.reload(hub_servers).await;
-            for p in &pending {
-                hub.mark_pending(p);
-            }
+            hub.reload(hub_servers, &pending).await;
             let mut out = cfg.warnings;
             out.push(listing(hub));
             out.join("\n")
@@ -273,15 +266,16 @@ fn spawn_consent(pending: Vec<String>, hub: Arc<Hub>, io: Arc<Io>, cwd: PathBuf)
                         log::warn!("host/ask failed; denying project servers: {e:#}");
                         warned = true;
                     }
-                    names.iter().map(|n| (n.to_string(), false)).collect()
+                    names.iter().map(|n| (n.to_string(), consent::Decision::Deny)).collect()
                 }
             };
-            for (name, allowed) in decisions {
-                if !allowed {
+            for (name, decision) in decisions {
+                if decision == consent::Decision::Deny {
                     hub.deny(&name);
                     continue;
                 }
-                if let Some(entry) = batch.iter().find(|e| e.name == name)
+                if decision == consent::Decision::Remember
+                    && let Some(entry) = batch.iter().find(|e| e.name == name)
                     && let Source::Project(dir) = &entry.source
                     && let Some(store) = store.as_mut()
                     && let Err(e) = store.allow(ConsentStore::key(dir, &entry.name, &entry.raw))
@@ -292,20 +286,6 @@ fn spawn_consent(pending: Vec<String>, hub: Arc<Hub>, io: Arc<Io>, cwd: PathBuf)
             }
         }
     });
-}
-
-/// Wait up to `FIRST_TOOLS_WAIT` for the first connections to settle.
-async fn settle(hub: &Hub, rx: &mut tokio::sync::watch::Receiver<u64>) {
-    let deadline = tokio::time::Instant::now() + FIRST_TOOLS_WAIT;
-    loop {
-        if !hub.status().iter().any(|(_, s)| matches!(s, State::Connecting)) {
-            return;
-        }
-        match tokio::time::timeout_at(deadline, rx.changed()).await {
-            Ok(Ok(())) => continue,
-            _ => return,
-        }
-    }
 }
 
 /// Sidecar entry point: serve gray on stdin/stdout until shutdown or EOF.
@@ -360,7 +340,6 @@ pub async fn run() -> anyhow::Result<()> {
 
     let io = Arc::new(Io::stdout());
     let mut rx_changed = hub.subscribe();
-    let mut first_tools = true;
     let mut pending = Some(pending);
     loop {
         tokio::select! {
@@ -373,8 +352,17 @@ pub async fn run() -> anyhow::Result<()> {
                 if method == "plugin/shutdown" {
                     break;
                 }
-                if method == "plugin/tools" && std::mem::take(&mut first_tools) {
-                    settle(&hub, &mut rx_changed).await;
+                if method == "tool/call" {
+                    let hub = Arc::clone(&hub);
+                    let io = Arc::clone(&io);
+                    let cwd = cwd.clone();
+                    tokio::spawn(async move {
+                        let result = handle(&frame, &hub, &io, &cwd).await;
+                        if let (Some(result), Some(id)) = (result, frame.get("id")) {
+                            io.reply(id, result);
+                        }
+                    });
+                    continue;
                 }
                 let result = handle(&frame, &hub, &io, &cwd).await;
                 if let (Some(result), Some(id)) = (result, frame.get("id")) {

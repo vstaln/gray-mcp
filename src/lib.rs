@@ -17,6 +17,7 @@ pub mod hub;
 pub mod names;
 pub mod server;
 pub mod sidecar;
+pub mod slim;
 pub mod toolcache;
 
 /// Manifest name: the host forwards `gray mcp ...` to this binary.

@@ -290,11 +290,14 @@ impl Hub {
             for t in tools {
                 let name = names::tool_name(&server, &t.name, &mut taken);
                 table.insert(name.clone(), (server.clone(), t.name.to_string()));
-                let def = json!({
+                let mut def = json!({
                     "name": name,
                     "description": t.description.as_deref().unwrap_or(""),
                     "parameters": names::fix_schema(Some(t.schema_as_json_value())),
                 });
+                if t.annotations.as_ref().and_then(|a| a.read_only_hint) == Some(true) {
+                    def["read_only"] = json!(true);
+                }
                 records.push(crate::toolcache::CachedTool { mcp: name, raw: t.name.to_string(), def: def.clone() });
                 defs.push(def);
             }
@@ -342,7 +345,25 @@ impl Hub {
     }
 
     pub fn tools(&self) -> Vec<Value> {
-        self.defs.read().unwrap().clone()
+        let table = self.table.read().unwrap();
+        let (mut defs, slimmed) =
+            crate::slim::publish(&self.defs.read().unwrap(), |n| table.get(n).map(|(s, _)| s.clone()));
+        if slimmed {
+            defs.push(crate::slim::schema_tool_def());
+        }
+        defs
+    }
+
+    pub fn schema(&self, args: &Value) -> Value {
+        let tool = args.get("tool").and_then(Value::as_str).unwrap_or("");
+        let defs = self.defs.read().unwrap();
+        match defs.iter().find(|d| d.get("name").and_then(Value::as_str) == Some(tool)) {
+            Some(d) => json!({ "content": serde_json::to_string_pretty(&json!({
+                "description": d.get("description"),
+                "parameters": d.get("parameters"),
+            })).unwrap_or_default() }),
+            None => error_reply(format!("unknown tool {tool}")),
+        }
     }
 
     /// Route a model tool call; every failure becomes an `is_error` reply.
@@ -400,8 +421,9 @@ impl Hub {
             .collect()
     }
 
-    /// Close everything, swap in `servers`, and start again.
-    pub async fn reload(self: &Arc<Self>, servers: Vec<ServerEntry>) {
+    /// Close everything, swap in `servers`, and start again. Servers in
+    /// `pending` stay `Pending` (consent gate) instead of connecting.
+    pub async fn reload(self: &Arc<Self>, servers: Vec<ServerEntry>, pending: &[String]) {
         *self.generation.write().unwrap() += 1;
         *self.notify_tx.write().unwrap() = None;
         let old: Vec<Arc<dyn Conn>> = self.conns.write().unwrap().drain().map(|(_, c)| c).collect();
@@ -412,7 +434,14 @@ impl Hub {
             let mut states = self.states.write().unwrap();
             states.clear();
             for s in &servers {
-                states.insert(s.name.clone(), if s.disabled { State::Disabled } else { State::Connecting });
+                let state = if pending.contains(&s.name) {
+                    State::Pending
+                } else if s.disabled {
+                    State::Disabled
+                } else {
+                    State::Connecting
+                };
+                states.insert(s.name.clone(), state);
             }
             *self.servers.write().unwrap() = servers;
             self.seeds.write().unwrap().clear();
