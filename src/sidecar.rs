@@ -383,6 +383,7 @@ pub async fn run() -> anyhow::Result<()> {
             }
         }
     }
+    let _ = tokio::time::timeout(std::time::Duration::from_millis(600), hub.close_all()).await;
     Ok(())
 }
 
