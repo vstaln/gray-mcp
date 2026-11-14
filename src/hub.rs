@@ -421,6 +421,16 @@ impl Hub {
             .collect()
     }
 
+    /// Cancel every live connection, so each upstream child is told to stop
+    /// before the process goes away.
+    pub async fn close_all(&self) {
+        *self.notify_tx.write().unwrap() = None;
+        let conns: Vec<Arc<dyn Conn>> = self.conns.write().unwrap().drain().map(|(_, c)| c).collect();
+        for c in conns {
+            c.close().await;
+        }
+    }
+
     /// Close everything, swap in `servers`, and start again. Servers in
     /// `pending` stay `Pending` (consent gate) instead of connecting.
     pub async fn reload(self: &Arc<Self>, servers: Vec<ServerEntry>, pending: &[String]) {
