@@ -9,8 +9,8 @@ fn manifest_has_required_shape() {
     assert_eq!(m["commands"], serde_json::json!(["/mcp"]));
     let caps = m["capabilities"].as_array().unwrap();
     assert!(caps.contains(&serde_json::json!("host.ask")));
-    let comp = m["completion"].as_array().unwrap();
-    assert!(comp.contains(&serde_json::json!("serve")));
+    let comp: Vec<&str> = m["completion"].as_array().unwrap().iter().map(|e| e["arg"].as_str().unwrap()).collect();
+    assert!(comp.contains(&"serve"));
 }
 
 #[test]

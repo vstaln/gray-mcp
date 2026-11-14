@@ -26,8 +26,16 @@ pub const PLUGIN_NAME: &str = "mcp";
 pub const PROTOCOL: &str = "1.3";
 /// Slash commands claimed in the TUI.
 pub const COMMANDS: &[&str] = &["/mcp"];
-/// Subcommands offered for shell/TUI completion.
-pub const COMPLETION: &[&str] = &["list", "add", "remove", "allow", "tools", "doctor", "serve"];
+/// Subcommands offered for shell/TUI completion, with the hint each shows.
+pub const COMPLETION: &[(&str, &str)] = &[
+    ("list", "list the configured mcp servers"),
+    ("add", "add a server and its tools"),
+    ("remove", "drop a server"),
+    ("allow", "choose which server tools may run"),
+    ("tools", "every tool the servers expose"),
+    ("doctor", "why a server or tool is failing"),
+    ("serve", "run gray itself as an mcp server"),
+];
 
 /// The `plugin/manifest` reply. Tools are deliberately empty: the live set
 /// arrives through `plugin/tools`.
@@ -37,8 +45,12 @@ pub fn manifest() -> serde_json::Value {
         "version": env!("CARGO_PKG_VERSION"),
         "protocol": PROTOCOL,
         "tools": [],
+        "description": "connect MCP servers and their tools",
         "commands": COMMANDS,
-        "completion": COMPLETION,
+        "completion": COMPLETION
+            .iter()
+            .map(|(arg, description)| serde_json::json!({"arg": arg, "description": description}))
+            .collect::<Vec<_>>(),
         "capabilities": ["host.ask"],
         "hooks": [],
     })
