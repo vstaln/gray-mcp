@@ -137,7 +137,7 @@ fn target_path(project: bool, cwd: &Path) -> anyhow::Result<PathBuf> {
     if project { Ok(config::project_path(cwd)) } else { config::user_path() }
 }
 
-fn read_doc(path: &Path) -> anyhow::Result<Value> {
+pub(crate) fn read_doc(path: &Path) -> anyhow::Result<Value> {
     match std::fs::read_to_string(path) {
         Ok(text) => serde_json::from_str(&text).with_context(|| format!("{}: invalid JSON", path.display())),
         Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(json!({})),
@@ -145,7 +145,7 @@ fn read_doc(path: &Path) -> anyhow::Result<Value> {
     }
 }
 
-fn write_doc(path: &Path, doc: &Value) -> anyhow::Result<()> {
+pub(crate) fn write_doc(path: &Path, doc: &Value) -> anyhow::Result<()> {
     if let Some(dir) = path.parent() {
         std::fs::create_dir_all(dir)?;
     }
