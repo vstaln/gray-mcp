@@ -36,9 +36,11 @@ const DEFAULT_LAST: usize = 20;
 #[derive(Debug, Deserialize, JsonSchema)]
 pub struct PromptArgs {
     /// The task for gray, in natural language.
+    #[serde(alias = "task", alias = "message", alias = "text")]
     pub prompt: String,
     /// Continue an existing session (from an earlier gray_prompt result or
     /// gray_sessions). Omit to start a fresh one.
+    #[serde(alias = "id", alias = "session")]
     pub session_id: Option<String>,
     /// Working directory for the run; default: the server's own.
     pub cwd: Option<String>,
@@ -47,14 +49,17 @@ pub struct PromptArgs {
 #[derive(Debug, Deserialize, JsonSchema)]
 pub struct SessionsArgs {
     /// How many sessions to list (newest first; default 20).
+    #[serde(alias = "n", alias = "last", alias = "count")]
     pub limit: Option<usize>,
 }
 
 #[derive(Debug, Deserialize, JsonSchema)]
 pub struct ReadArgs {
     /// The session id (as printed by gray_prompt / gray_sessions).
+    #[serde(alias = "id", alias = "session", alias = "name")]
     pub session_id: String,
     /// Only the last N messages (default 20).
+    #[serde(alias = "n", alias = "limit", alias = "count")]
     pub last: Option<usize>,
 }
 
@@ -279,7 +284,9 @@ impl GrayServer {
         Ok(result)
     }
 
-    #[tool(description = "List recent gray sessions, newest first: id, model, working directory, start time.")]
+    #[tool(
+        description = "List recent gray sessions, newest first: id, model, working directory, start time. Arguments: limit (integer, optional; default 20)."
+    )]
     fn gray_sessions(&self, Parameters(a): Parameters<SessionsArgs>) -> Result<CallToolResult, McpError> {
         let rows = list_sessions(&self.sessions_dir, a.limit.unwrap_or(DEFAULT_SESSIONS)).map_err(internal)?;
         let text: Vec<String> = rows
@@ -299,7 +306,9 @@ impl GrayServer {
         Ok(result)
     }
 
-    #[tool(description = "Read a gray session transcript (the last N messages, default 20) as `role: text` lines.")]
+    #[tool(
+        description = "Read a gray session transcript as `role: text` lines. Arguments: session_id (string, required; the session name such as `hydrogenic-baryon-spheromak`, as listed by gray_sessions), last (integer, optional; how many trailing messages, default 20)."
+    )]
     fn gray_session_read(&self, Parameters(a): Parameters<ReadArgs>) -> Result<CallToolResult, McpError> {
         let text = read_session(&self.sessions_dir, &a.session_id, a.last.unwrap_or(DEFAULT_LAST)).map_err(internal)?;
         let text = if text.is_empty() { "(no messages)".to_string() } else { text };
