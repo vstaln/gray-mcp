@@ -199,7 +199,14 @@ async fn reload(hub: &Arc<Hub>, cwd: &Path) -> Vec<String> {
     let mut hub_servers = cfg.servers;
     let consent = ConsentStore::default_path().map(ConsentStore::load);
     let pending = split_pending(&mut hub_servers, consent.as_ref().ok());
+    let mut rx = hub.subscribe();
     hub.reload(hub_servers, &pending).await;
+    let deadline = tokio::time::Instant::now() + std::time::Duration::from_secs(10);
+    while hub.status().iter().any(|(_, s)| matches!(s, State::Connecting)) {
+        if tokio::time::timeout_at(deadline, rx.changed()).await.is_err() {
+            break;
+        }
+    }
     cfg.warnings
 }
 
