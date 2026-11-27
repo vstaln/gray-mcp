@@ -151,14 +151,21 @@ pub async fn handle(req: &Value, hub: &Arc<Hub>, io: &Io, cwd: &Path) -> Option<
     }
 }
 
-fn state_line(state: &State) -> String {
+fn tool_count(n: usize) -> String {
+    if n == 1 { "1 tool".into() } else { format!("{n} tools") }
+}
+
+fn state_line(hub: &Hub, name: &str, state: &State) -> String {
     match state {
+        State::Dormant if hub.seeded_tools(name) > 0 => {
+            format!("idle ({}, starts on use)", tool_count(hub.seeded_tools(name)))
+        }
         State::Connecting => "connecting".into(),
         State::Pending => "awaiting consent (/mcp allow <name>)".into(),
-        State::Ready { tools } => format!("ready ({tools} tools)"),
+        State::Ready { tools } => format!("ready ({})", tool_count(*tools)),
         State::Failed { error } => format!("failed: {error}"),
         State::Denied => "denied".into(),
-        State::Dormant => "dormant (starts on use)".into(),
+        State::Dormant => "idle (starts on use)".into(),
         State::Disabled => "disabled".into(),
     }
 }
@@ -169,7 +176,7 @@ pub fn listing(hub: &Hub) -> String {
         return "no MCP servers configured (gray mcp add <name> -- <command>)".into();
     }
     let width = rows.iter().map(|(n, _)| n.len()).max().unwrap_or(0);
-    let mut s: Vec<String> = rows.iter().map(|(n, st)| format!("{n:<width$}  {}", state_line(st))).collect();
+    let mut s: Vec<String> = rows.iter().map(|(n, st)| format!("{n:<width$}  {}", state_line(hub, n, st))).collect();
     s.push("use /mcp reload | /mcp allow <name> | /mcp tools".into());
     s.join("\n")
 }
@@ -179,8 +186,10 @@ fn picker(hub: &Hub, at: Option<&str>) -> Value {
     if rows.is_empty() {
         return json!({"text": listing(hub)});
     }
-    let items: Vec<Value> =
-        rows.iter().map(|(name, st)| json!({"id": name, "label": name, "description": state_line(st)})).collect();
+    let items: Vec<Value> = rows
+        .iter()
+        .map(|(name, st)| json!({"id": name, "label": name, "description": state_line(hub, name, st)}))
+        .collect();
     let mut spec = json!({
         "title": "MCP servers",
         "items": items,
