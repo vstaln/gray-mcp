@@ -135,7 +135,11 @@ pub async fn handle(req: &Value, hub: &Arc<Hub>, io: &Io, cwd: &Path) -> Option<
                 .filter(|c| !c.is_empty())
                 .map(PathBuf::from)
                 .unwrap_or_else(|| cwd.to_path_buf());
-            Some(json!({"text": command(&argv, hub, &cwd).await}))
+            Some(match argv.first().map(String::as_str) {
+                None | Some("") => picker(hub, None),
+                Some("--pick") => pick(argv.last().map(String::as_str).unwrap_or(""), hub, &cwd).await,
+                _ => json!({"text": command(&argv, hub, &cwd).await}),
+            })
         }
         "plugin/shutdown" => None,
         _ => {
@@ -147,14 +151,21 @@ pub async fn handle(req: &Value, hub: &Arc<Hub>, io: &Io, cwd: &Path) -> Option<
     }
 }
 
-fn state_line(state: &State) -> String {
+fn tool_count(n: usize) -> String {
+    if n == 1 { "1 tool".into() } else { format!("{n} tools") }
+}
+
+fn state_line(hub: &Hub, name: &str, state: &State) -> String {
     match state {
+        State::Dormant if hub.seeded_tools(name) > 0 => {
+            format!("idle ({}, starts on use)", tool_count(hub.seeded_tools(name)))
+        }
         State::Connecting => "connecting".into(),
         State::Pending => "awaiting consent (/mcp allow <name>)".into(),
-        State::Ready { tools } => format!("ready ({tools} tools)"),
+        State::Ready { tools } => format!("ready ({})", tool_count(*tools)),
         State::Failed { error } => format!("failed: {error}"),
         State::Denied => "denied".into(),
-        State::Dormant => "dormant (starts on use)".into(),
+        State::Dormant => "idle (starts on use)".into(),
         State::Disabled => "disabled".into(),
     }
 }
@@ -165,9 +176,92 @@ pub fn listing(hub: &Hub) -> String {
         return "no MCP servers configured (gray mcp add <name> -- <command>)".into();
     }
     let width = rows.iter().map(|(n, _)| n.len()).max().unwrap_or(0);
-    let mut s: Vec<String> = rows.iter().map(|(n, st)| format!("{n:<width$}  {}", state_line(st))).collect();
+    let mut s: Vec<String> = rows.iter().map(|(n, st)| format!("{n:<width$}  {}", state_line(hub, n, st))).collect();
     s.push("use /mcp reload | /mcp allow <name> | /mcp tools".into());
     s.join("\n")
+}
+
+fn picker(hub: &Hub, at: Option<&str>) -> Value {
+    let rows = hub.status();
+    if rows.is_empty() {
+        return json!({"text": listing(hub)});
+    }
+    let items: Vec<Value> = rows
+        .iter()
+        .map(|(name, st)| json!({"id": name, "label": name, "description": state_line(hub, name, st)}))
+        .collect();
+    let mut spec = json!({
+        "title": "MCP servers",
+        "items": items,
+        "enter": "on/off",
+        "keys": [{"key": "r", "label": "reload"}],
+    });
+    if let Some(id) = at {
+        spec["selected_id"] = json!(id);
+        spec["cursor_only"] = json!(true);
+    }
+    json!({"picker": spec})
+}
+
+async fn reload(hub: &Arc<Hub>, cwd: &Path) -> Vec<String> {
+    let cfg = config::load(cwd);
+    let mut hub_servers = cfg.servers;
+    let consent = ConsentStore::default_path().map(ConsentStore::load);
+    let pending = split_pending(&mut hub_servers, consent.as_ref().ok());
+    let mut rx = hub.subscribe();
+    hub.reload(hub_servers, &pending).await;
+    let deadline = tokio::time::Instant::now() + std::time::Duration::from_secs(10);
+    while hub.status().iter().any(|(_, s)| matches!(s, State::Connecting)) {
+        if tokio::time::timeout_at(deadline, rx.changed()).await.is_err() {
+            break;
+        }
+    }
+    cfg.warnings
+}
+
+fn set_disabled(name: &str, cwd: &Path) -> anyhow::Result<()> {
+    let cfg = config::load(cwd);
+    let entry = cfg.servers.iter().find(|s| s.name == name).ok_or_else(|| anyhow!("no such server"))?;
+    let path = match &entry.source {
+        Source::User => config::user_path()?,
+        Source::Project(dir) => config::project_path(dir),
+    };
+    let mut doc = crate::cli::read_doc(&path)?;
+    let server = doc
+        .get_mut("mcpServers")
+        .and_then(|m| m.get_mut(name))
+        .and_then(Value::as_object_mut)
+        .ok_or_else(|| anyhow!("'{name}' not found in {}", path.display()))?;
+    if entry.disabled {
+        server.remove("disabled");
+    } else {
+        server.insert("disabled".into(), json!(true));
+    }
+    crate::cli::write_doc(&path, &doc)
+}
+
+async fn pick(pick: &str, hub: &Arc<Hub>, cwd: &Path) -> Value {
+    let (name, key) = match pick.rsplit_once(':') {
+        Some((n, k)) if k.chars().count() == 1 => (n, k),
+        _ => (pick, ""),
+    };
+    let pending = hub.status().iter().any(|(n, st)| n == name && matches!(st, State::Pending));
+    let done = match key {
+        "r" => Ok(()),
+        _ if pending => allow(name, hub, cwd).await,
+        _ => set_disabled(name, cwd),
+    };
+    match done {
+        Ok(()) => {
+            let warnings = reload(hub, cwd).await;
+            if warnings.is_empty() {
+                picker(hub, Some(name))
+            } else {
+                json!({"text": format!("{}\n{}", warnings.join("\n"), listing(hub))})
+            }
+        }
+        Err(e) => json!({"text": format!("{name}: {e:#}")}),
+    }
 }
 
 /// `/mcp` in the TUI.
@@ -175,12 +269,7 @@ pub async fn command(argv: &[String], hub: &Arc<Hub>, cwd: &Path) -> String {
     match argv.first().map(String::as_str) {
         None | Some("") | Some("list") => listing(hub),
         Some("reload") => {
-            let cfg = config::load(cwd);
-            let mut hub_servers = cfg.servers;
-            let consent = ConsentStore::default_path().map(ConsentStore::load);
-            let pending = split_pending(&mut hub_servers, consent.as_ref().ok());
-            hub.reload(hub_servers, &pending).await;
-            let mut out = cfg.warnings;
+            let mut out = reload(hub, cwd).await;
             out.push(listing(hub));
             out.join("\n")
         }

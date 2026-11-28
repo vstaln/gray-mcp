@@ -411,6 +411,10 @@ impl Hub {
     }
 
     /// `(name, state)` in config order.
+    pub fn seeded_tools(&self, server: &str) -> usize {
+        self.seeds.read().unwrap().get(server).map_or(0, Vec::len)
+    }
+
     pub fn status(&self) -> Vec<(String, State)> {
         let states = self.states.read().unwrap();
         self.servers
