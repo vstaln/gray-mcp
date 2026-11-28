@@ -67,7 +67,8 @@ fn ask_params_shape() {
     assert_eq!(q["question"], "Start MCP server fs?");
     assert_eq!(q["no_other"], json!(true));
     let detail = q["detail"].as_str().unwrap();
-    assert!(detail.contains("npx srv") && detail.contains("/proj/.mcp.json"), "{detail}");
+    let where_ = Path::new("/proj").join(".mcp.json").display().to_string();
+    assert!(detail.contains("npx srv") && detail.contains(&where_), "{detail}");
     let labels: Vec<&str> = q["options"].as_array().unwrap().iter().map(|o| o["label"].as_str().unwrap()).collect();
     assert_eq!(labels, vec!["Allow", "Allow for this session", "Deny"]);
 }
